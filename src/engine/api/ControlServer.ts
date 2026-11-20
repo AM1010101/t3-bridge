@@ -8,6 +8,7 @@ import { testDiscordToken } from "../adapters/discord/DiscordAdapter.ts";
 import { slackManifest } from "../adapters/slack/manifest.ts";
 import { testSlackTokens } from "../adapters/slack/SlackAdapter.ts";
 import { testTelegramToken } from "../adapters/telegram/TelegramAdapter.ts";
+import { testWhatsAppCredentials } from "../adapters/whatsapp/WhatsAppAdapter.ts";
 import { DEFAULT_INSTRUCTIONS } from "../core/render.ts";
 import { NotFoundError, type BotInput, type Engine } from "../Engine.ts";
 import type { Updater } from "../updater.ts";
@@ -185,6 +186,7 @@ export class ControlServer {
     if (method === "POST" && path === "/api/slack/test") return testSlackTokens(body as never);
     if (method === "POST" && path === "/api/discord/test") return testDiscordToken(body as never);
     if (method === "POST" && path === "/api/telegram/test") return testTelegramToken(body as never);
+    if (method === "POST" && path === "/api/whatsapp/test") return testWhatsAppCredentials(body as never);
     if (method === "POST" && path === "/api/bots") return engine.addBot(body as BotInput);
     if (method === "POST" && path === "/api/control/rotate") {
       const token = await engine.rotateControlToken();
@@ -197,6 +199,8 @@ export class ControlServer {
     if (method === "GET" && memoryMatch !== null) return engine.memory(memoryMatch[1]!);
     if (method === "PUT" && memoryMatch !== null)
       return engine.saveMemory(memoryMatch[1]!, body as { name: string; text: string });
+    const whatsappMatch = /^\/api\/bots\/([\w-]+)\/whatsapp$/.exec(path);
+    if (method === "GET" && whatsappMatch !== null) return engine.whatsappWebhook(whatsappMatch[1]!);
     const freshMatch =/^\/api\/bots\/([\w-]+)\/new-thread$/.exec(path);
     if (method === "POST" && freshMatch !== null) return engine.startFreshThread(freshMatch[1]!);
     const stopMatch = /^\/api\/bots\/([\w-]+)\/stop$/.exec(path);

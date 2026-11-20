@@ -76,6 +76,14 @@ export function makeApi(target: Target) {
       ),
     testTelegram: (input: { botToken: string }) =>
       call<{ botUser: string; link: string }>("POST", "/api/telegram/test", input),
+    testWhatsApp: (input: WhatsAppInput) =>
+      call<{ botUser: string; phone: string; link: string; verifyToken: string; webhookUrl: string | null }>(
+        "POST",
+        "/api/whatsapp/test",
+        input,
+      ),
+    whatsappWebhook: (id: string) =>
+      call<{ webhookUrl: string | null; verifyToken: string | null }>("GET", `/api/bots/${id}/whatsapp`),
     addBot: (input: BotInput) => call<Bot>("POST", "/api/bots", input),
     updateBot: (id: string, patch: Partial<BotInput>) =>
       call<Bot>("PATCH", `/api/bots/${id}`, patch),
@@ -130,12 +138,19 @@ export interface ThreadSummary {
   readonly updatedAt: string;
 }
 
-export type Platform = "slack" | "discord" | "telegram";
+export type Platform = "slack" | "discord" | "telegram" | "whatsapp";
+
+export interface WhatsAppInput {
+  readonly accessToken: string;
+  readonly phoneNumberId: string;
+  readonly appSecret: string;
+}
 
 export const PLATFORM_NAMES: Record<Platform, string> = {
   slack: "Slack",
   discord: "Discord",
   telegram: "Telegram",
+  whatsapp: "WhatsApp",
 };
 
 export interface Bot {
@@ -185,6 +200,7 @@ export interface BotInput {
   readonly slack?: { botToken: string; appToken: string };
   readonly discord?: { botToken: string };
   readonly telegram?: { botToken: string };
+  readonly whatsapp?: WhatsAppInput;
   readonly threadId: string | null;
   readonly allowedUserIds?: ReadonlyArray<string>;
   readonly instructions?: string;

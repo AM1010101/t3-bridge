@@ -1,4 +1,4 @@
-import { ArrowLeft, ChevronsUpDown, Gamepad2, Send, X, type LucideIcon } from "lucide-react";
+import { ArrowLeft, ChevronsUpDown, Gamepad2, MessageCircle, Send, X, type LucideIcon } from "lucide-react";
 import QRCode from "qrcode";
 import { useEffect, useState, type ReactNode } from "react";
 
@@ -36,7 +36,7 @@ export function errorText(cause: unknown) {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
-export const PLATFORMS: ReadonlyArray<Platform> = ["slack", "discord", "telegram"];
+export const PLATFORMS: ReadonlyArray<Platform> = ["slack", "discord", "telegram", "whatsapp"];
 
 // ── bot state ─────────────────────────────────────────────────────────────
 
@@ -64,13 +64,15 @@ export function botHandle(bot: BotStatus) {
     const [user, team] = identity.split(" @ ");
     return `@${user} · ${team}`;
   }
+  if (bot.platform === "whatsapp" && bot.account?.username) return bot.account.username;
   if (bot.account?.username) return `@${bot.account.username}`;
-  return identity?.replace(/ on (Discord|Telegram)$/, "") ?? "";
+  return identity?.replace(/ on (Discord|Telegram|WhatsApp)$/, "") ?? "";
 }
 
 /** Where the "Open in …" buttons go. Slack has no link to one app, so it opens Slack itself. */
 export function openLink(bot: BotStatus) {
   if (bot.platform === "telegram") return bot.chatLink ?? "https://web.telegram.org";
+  if (bot.platform === "whatsapp") return bot.chatLink ?? "https://web.whatsapp.com";
   if (bot.platform === "discord") return "https://discord.com/channels/@me";
   return "slack://open";
 }
@@ -129,7 +131,7 @@ export function SlackIcon({ size = 16, strokeWidth = 2 }: { size?: number; strok
   );
 }
 
-const PLATFORM_ICONS: Record<Exclude<Platform, "slack">, LucideIcon> = { discord: Gamepad2, telegram: Send };
+const PLATFORM_ICONS: Record<Exclude<Platform, "slack">, LucideIcon> = { discord: Gamepad2, telegram: Send, whatsapp: MessageCircle };
 
 export function PlatformGlyph({ platform, size = 16 }: { platform: Platform; size?: number }) {
   if (platform === "slack") return <SlackIcon size={size} />;

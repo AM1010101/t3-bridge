@@ -1,6 +1,7 @@
 import { ArrowUpRight, Brain, Check, CircleAlert, CircleCheck, Pin, Plus, Send, X } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 
+import { WebhookBox } from "./AddBot.tsx";
 import { PLATFORM_NAMES, type Api, type BotStatus, type Memory, type Status } from "./api.ts";
 import {
   botHandle,
@@ -21,13 +22,14 @@ import {
   type Threads,
 } from "./shared.tsx";
 
-const PLATFORM_CARD = { slack: "Slack app", discord: "Discord bot", telegram: "Telegram bot" } as const;
+const PLATFORM_CARD = { slack: "Slack app", discord: "Discord bot", telegram: "Telegram bot", whatsapp: "WhatsApp number" } as const;
 
 /** Where people find their user id, for the list of who may use the bot. */
 const USER_ID_HINT = {
   slack: "Slack member IDs. Profile → ⋯ → Copy member ID.",
   discord: "Discord user IDs. Turn on Developer Mode, then right-click a person → Copy User ID.",
   telegram: "Telegram user IDs, numbers. The bot tells people theirs when it turns them away.",
+  whatsapp: "WhatsApp numbers, digits only with the country code, e.g. 447700900123.",
 } as const;
 
 export function BotView(props: {
@@ -106,6 +108,8 @@ export function BotView(props: {
           </div>
           {bot.platform === "slack" ? (
             <SlackCard api={api} bot={bot} manifestVersion={props.status.manifestVersion} onSaved={props.onChanged} />
+          ) : bot.platform === "whatsapp" ? (
+            <WhatsAppCard api={api} bot={bot} onSaved={props.onChanged} />
           ) : (
             <TokenCard api={api} bot={bot} onSaved={props.onChanged} />
           )}
@@ -643,6 +647,96 @@ function TokenCard(props: { api: Api; bot: BotStatus; onSaved: () => void }) {
       ) : (
         <button className="btn ghost-dark full" onClick={() => setReplacing(true)}>
           Replace token
+        </button>
+      )}
+      {message && <span className={message.ok ? "lime-text small" : "error-soft small"}>{message.text}</span>}
+    </div>
+  );
+}
+
+function WhatsAppCard(props: { api: Api; bot: BotStatus; onSaved: () => void }) {
+  const { api, bot } = props;
+  const [webhook, setWebhook] = useState<{ webhookUrl: string | null; verifyToken: string | null } | null>(null);
+  const [replacing, setReplacing] = useState(false);
+  const [values, setValues] = useState({ accessToken: "", phoneNumberId: bot.account?.applicationId ?? "", appSecret: "" });
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+
+  useEffect(() => {
+    void api.whatsappWebhook(bot.id).then(setWebhook).catch(() => setWebhook(null));
+  }, [api, bot.id, bot.account?.applicationId]);
+
+  const save = async () => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const input = {
+        accessToken: values.accessToken.trim(),
+        phoneNumberId: values.phoneNumberId.trim(),
+        appSecret: values.appSecret.trim(),
+      };
+      const result = await api.testWhatsApp(input);
+      await api.updateBot(bot.id, { whatsapp: input });
+      setValues({ ...values, accessToken: "", appSecret: "" });
+      setReplacing(false);
+      setMessage({ ok: true, text: `Now ${result.botUser}` });
+      props.onSaved();
+    } catch (cause) {
+      setMessage({ ok: false, text: errorText(cause) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="dark-card platform-card">
+      <div className="platform-head">
+        <h2 className="dark-title">{PLATFORM_CARD.whatsapp}</h2>
+        {bot.account?.username && <span className="badge lime">{bot.account.username}</span>}
+      </div>
+      <TokenRow label="Access token" prefix="" bot={bot} />
+      <p className="dark-note">
+        Message the number on WhatsApp. The bot can only write to you within 24 hours of your last message.
+      </p>
+      {webhook?.verifyToken && <WebhookBox verifyToken={webhook.verifyToken} webhookUrl={webhook.webhookUrl} />}
+      {bot.chatLink && (
+        <a className="btn lime full" href={bot.chatLink} target="_blank" rel="noreferrer">
+          Open in WhatsApp
+          <ArrowUpRight size={15} />
+        </a>
+      )}
+      {replacing ? (
+        <div className="replace">
+          <input
+            className="input dark mono"
+            placeholder="Phone number ID"
+            value={values.phoneNumberId}
+            onChange={(event) => setValues({ ...values, phoneNumberId: event.target.value })}
+          />
+          <input
+            className="input dark mono"
+            placeholder="App secret"
+            value={values.appSecret}
+            onChange={(event) => setValues({ ...values, appSecret: event.target.value })}
+          />
+          <input
+            className="input dark mono"
+            placeholder="Access token (EAA…)"
+            value={values.accessToken}
+            onChange={(event) => setValues({ ...values, accessToken: event.target.value })}
+          />
+          <div className="row">
+            <button className="btn lime" disabled={busy || values.accessToken.trim().length < 50} onClick={() => void save()}>
+              Check and save
+            </button>
+            <button className="btn ghost-dark" onClick={() => setReplacing(false)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button className="btn ghost-dark full" onClick={() => setReplacing(true)}>
+          Replace credentials
         </button>
       )}
       {message && <span className={message.ok ? "lime-text small" : "error-soft small"}>{message.text}</span>}

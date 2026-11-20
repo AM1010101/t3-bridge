@@ -80,7 +80,7 @@ export function Home(props: {
           <div className="add-copy">
             <h2 className="card-title">{status.bots.length === 0 ? "Add your first bot" : "Add a bot"}</h2>
             <p>
-              Connect a Slack, Discord or Telegram bot to a T3 thread. Four steps, about two minutes.
+              Connect a Slack, Discord, Telegram or WhatsApp bot to a T3 thread. Four steps, about two minutes.
             </p>
           </div>
           {PLATFORMS.map((platform) => (

@@ -4,7 +4,7 @@ import * as Path from "node:path";
 
 import type { LocalEnvironmentOptions } from "./t3/localEnvironment.ts";
 
-export type Platform = "slack" | "discord" | "telegram";
+export type Platform = "slack" | "discord" | "telegram" | "whatsapp";
 
 export interface BotConfig {
   readonly id: string;

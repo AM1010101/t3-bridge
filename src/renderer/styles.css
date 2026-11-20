@@ -12,6 +12,7 @@
   --slack: #611f69;
   --discord: #5865f2;
   --telegram: #229ed9;
+  --whatsapp: #1fa855;
   --on-dark: rgba(255, 255, 255, 0.6);
   --on-dark-2: rgba(255, 255, 255, 0.4);
   --line-dark: rgba(255, 255, 255, 0.12);
@@ -376,6 +377,10 @@ code {
   background: var(--telegram);
 }
 
+.btn.brand.whatsapp {
+  background: var(--whatsapp);
+}
+
 .btn.brand:hover {
   filter: brightness(1.08);
 }
@@ -671,6 +676,10 @@ code {
 
 .platform-badge.telegram {
   background: var(--telegram);
+}
+
+.platform-badge.whatsapp {
+  background: var(--whatsapp);
 }
 
 .menu {

@@ -14,6 +14,8 @@ import { AGENT_LAYOUT_MANIFEST_VERSION, MANIFEST_VERSION } from "./adapters/slac
 import { DiscordAdapter, discordInviteUrl, testDiscordToken } from "./adapters/discord/DiscordAdapter.ts";
 import { SlackAdapter, testSlackTokens } from "./adapters/slack/SlackAdapter.ts";
 import { TelegramAdapter, testTelegramToken } from "./adapters/telegram/TelegramAdapter.ts";
+import { testWhatsAppCredentials, WhatsAppAdapter } from "./adapters/whatsapp/WhatsAppAdapter.ts";
+import { publicWebhookUrl, verifyTokenFor } from "./adapters/whatsapp/webhook.ts";
 import { isWorking, type ActivityEntry } from "./core/activity.ts";
 import { BotRuntime } from "./core/BotRuntime.ts";
 import { ButtonStore } from "./core/ButtonStore.ts";
@@ -58,6 +60,7 @@ export interface BotInput {
   readonly slack?: { readonly botToken: string; readonly appToken: string };
   readonly discord?: { readonly botToken: string };
   readonly telegram?: { readonly botToken: string };
+  readonly whatsapp?: { readonly accessToken: string; readonly phoneNumberId: string; readonly appSecret: string };
   readonly threadId: string | null;
   readonly allowedUserIds?: ReadonlyArray<string>;
   readonly instructions?: string;
@@ -85,6 +88,7 @@ const PLATFORM_LABELS: Record<Platform, string> = {
   slack: "Slack",
   discord: "Discord",
   telegram: "Telegram",
+  whatsapp: "WhatsApp",
 };
 
 export class Engine {
@@ -424,6 +428,18 @@ export class Engine {
     return token;
   }
 
+  /** What to enter in Meta's webhook settings for a WhatsApp bot. */
+  async whatsappWebhook(id: string) {
+    const bot = this.config.get().bots.find((candidate) => candidate.id === id);
+    if (bot?.platform !== "whatsapp") throw new NotFoundError("No such WhatsApp bot");
+    const appSecret = await this.options.secrets.get(botSecret(id, "appToken"));
+    const phoneNumberId = bot.account?.applicationId;
+    return {
+      webhookUrl: publicWebhookUrl(),
+      verifyToken: appSecret && phoneNumberId ? verifyTokenFor(appSecret, phoneNumberId) : null,
+    };
+  }
+
   async removeBot(id: string) {
     await this.bots.get(id)?.stop();
     this.bots.delete(id);
@@ -460,6 +476,18 @@ export class Engine {
       const checked = await testTelegramToken(input.telegram);
       await secrets.set(botSecret(id, "botToken"), input.telegram.botToken.trim());
       return { account: { username: checked.botUser } };
+    }
+    if (platform === "whatsapp" && input.whatsapp) {
+      const checked = await testWhatsAppCredentials(input.whatsapp);
+      // The app secret checks webhook signatures; it is kept in the app-token slot.
+      await secrets.set(botSecret(id, "botToken"), input.whatsapp.accessToken.trim());
+      await secrets.set(botSecret(id, "appToken"), input.whatsapp.appSecret.trim());
+      return {
+        account: {
+          username: checked.phone || checked.botUser,
+          applicationId: input.whatsapp.phoneNumberId.trim(),
+        },
+      };
     }
     return null;
   }
@@ -527,6 +555,15 @@ export class Engine {
       const buttons = new ButtonStore(
         Path.join(this.options.dataDir, "state", `${bot.id}.buttons.json`),
       );
+      if (bot.platform === "whatsapp") {
+        const appSecret = await this.options.secrets.get(botSecret(bot.id, "appToken"));
+        const phoneNumberId = bot.account?.applicationId;
+        if (!appSecret || !phoneNumberId) {
+          this.log.warn(`[${bot.name}] is missing its WhatsApp app secret or phone number ID; add them in T3 Bridge.`);
+          return null;
+        }
+        return new WhatsAppAdapter({ accessToken: botToken, phoneNumberId, appSecret }, this.log, bot.name, buttons);
+      }
       return bot.platform === "discord"
         ? new DiscordAdapter(botToken, this.log, bot.name, buttons)
         : new TelegramAdapter(botToken, this.log, bot.name, buttons);
@@ -566,6 +603,10 @@ function chatLink(bot: BotConfig): string | null {
     return discordInviteUrl(bot.account.applicationId);
   if (bot.platform === "telegram" && bot.account?.username)
     return `https://t.me/${bot.account.username}`;
+  if (bot.platform === "whatsapp" && bot.account?.username) {
+    const digits = bot.account.username.replace(/\D/g, "");
+    if (digits) return `https://wa.me/${digits}`;
+  }
   return null;
 }
 

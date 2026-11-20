@@ -51,16 +51,31 @@ const STEPS: Record<Platform, ReadonlyArray<{ title: string; desc: string }>> = 
     { title: "Thread", desc: "Pick the T3 thread it talks to" },
     { title: "Say hello", desc: "Press Start to become its owner" },
   ],
+  whatsapp: [
+    { title: "Meta app", desc: "Set up WhatsApp in a Meta app" },
+    { title: "Connect", desc: "Paste three values, set the webhook" },
+    { title: "Thread", desc: "Pick the T3 thread it talks to" },
+    { title: "Say hello", desc: "Message the number to become its owner" },
+  ],
 };
 
 /** A token pasted so far looks complete enough to check. */
-function tokenReady(platform: Platform, botToken: string, appToken: string) {
+function tokenReady(platform: Platform, botToken: string, appToken: string, phoneNumberId: string) {
   if (platform === "slack") return botToken.startsWith("xoxb-") && appToken.startsWith("xapp-");
+  if (platform === "whatsapp")
+    return botToken.length >= 50 && !/\s/.test(botToken) && /^[a-f0-9]{32}$/i.test(appToken) && /^\d{6,20}$/.test(phoneNumberId);
   if (platform === "telegram") return /^\d+:[\w-]{30,}$/.test(botToken);
   return botToken.length >= 50 && !/\s/.test(botToken);
 }
 
-type Check = { state: "idle" | "checking" | "ok" | "bad"; text: string; link?: string; note?: string };
+type Check = {
+  state: "idle" | "checking" | "ok" | "bad";
+  text: string;
+  link?: string;
+  note?: string;
+  verifyToken?: string;
+  webhookUrl?: string | null;
+};
 
 export function AddBot(props: {
   api: Api;
@@ -76,6 +91,7 @@ export function AddBot(props: {
   const [name, setName] = useState("");
   const [botToken, setBotToken] = useState("");
   const [appToken, setAppToken] = useState("");
+  const [phoneNumberId, setPhoneNumberId] = useState("");
   const [check, setCheck] = useState<Check>({ state: "idle", text: "" });
   const [mode, setMode] = useState<"new" | "existing">("new");
   const [projectId, setProjectId] = useState("");
@@ -111,7 +127,7 @@ export function AddBot(props: {
   // Tokens are checked as soon as they look complete, so a wrong paste shows at once.
   useEffect(() => {
     const tokens = { botToken: botToken.trim(), appToken: appToken.trim() };
-    if (!tokenReady(platform, tokens.botToken, tokens.appToken)) {
+    if (!tokenReady(platform, tokens.botToken, tokens.appToken, phoneNumberId.trim())) {
       setCheck({ state: "idle", text: "" });
       return;
     }
@@ -133,6 +149,20 @@ export function AddBot(props: {
             : { note: "Optional: turn on Message Content Intent under Bot so the bot also reads replies that don't mention it." }),
         };
       }
+      if (platform === "whatsapp") {
+        const result = await api.testWhatsApp({
+          accessToken: tokens.botToken,
+          appSecret: tokens.appToken,
+          phoneNumberId: phoneNumberId.trim(),
+        });
+        return {
+          state: "ok",
+          text: `Valid · ${result.botUser}${result.phone ? ` · ${result.phone}` : ""}`,
+          link: result.link,
+          verifyToken: result.verifyToken,
+          webhookUrl: result.webhookUrl,
+        };
+      }
       const result = await api.testTelegram({ botToken: tokens.botToken });
       return { state: "ok", text: `Valid · @${result.botUser}`, link: result.link };
     };
@@ -145,7 +175,7 @@ export function AddBot(props: {
       current = false;
       clearTimeout(timer);
     };
-  }, [api, platform, botToken, appToken]);
+  }, [api, platform, botToken, appToken, phoneNumberId]);
 
   const add = async () => {
     setSaving(true);
@@ -172,7 +202,9 @@ export function AddBot(props: {
         platform,
         ...(platform === "slack"
           ? { slack: { botToken: botToken.trim(), appToken: appToken.trim() } }
-          : { [platform]: { botToken: botToken.trim() } }),
+          : platform === "whatsapp"
+            ? { whatsapp: { accessToken: botToken.trim(), appSecret: appToken.trim(), phoneNumberId: phoneNumberId.trim() } }
+            : { [platform]: { botToken: botToken.trim() } }),
         threadId: target,
         instructions,
         reminder: true,
@@ -198,15 +230,16 @@ export function AddBot(props: {
         slack: { text: "Create Slack app", href: manifest && name.trim() ? slackCreateUrl(manifest.json) : undefined },
         discord: { text: "Open developer portal", href: "https://discord.com/developers/applications" },
         telegram: { text: "Open @BotFather", href: "https://t.me/BotFather" },
+        whatsapp: { text: "Open Meta for Developers", href: "https://developers.facebook.com/apps" },
       }[platform];
       return (
         <StepCard
           step={0}
-          title={{ slack: "Create the Slack app", discord: "Create the Discord bot", telegram: "Get a token from BotFather" }[platform]}
+          title={{ slack: "Create the Slack app", discord: "Create the Discord bot", telegram: "Get a token from BotFather", whatsapp: "Set up WhatsApp in a Meta app" }[platform]}
           note={platform === "slack" ? "Takes about a minute" : undefined}
           next={
             <button className="btn primary lg" disabled={!name.trim()} onClick={() => setStep(1)}>
-              {{ slack: "I created it, next", discord: "I copied the token, next", telegram: "Next" }[platform]}
+              {{ slack: "I created it, next", discord: "I copied the token, next", telegram: "Next", whatsapp: "Next" }[platform]}
               <ArrowRight size={16} className="lime" />
             </button>
           }
@@ -254,6 +287,14 @@ export function AddBot(props: {
                 <li>BotFather replies with a token like 123456:ABC… Copy it; you paste it in the next step.</li>
               </>
             )}
+            {platform === "whatsapp" && (
+              <>
+                <li>Create an app of type Business, then add the WhatsApp product.</li>
+                <li>Under WhatsApp → API Setup, use the free test number. Add your own phone under To and confirm the code.</li>
+                <li>Make a permanent token: Business settings → System users → add one, give it the app with full control, then Generate token with whatsapp_business_messaging. The token on API Setup expires in a day.</li>
+                <li>Have three things ready: the token, the Phone number ID from API Setup, and the App secret from App settings → Basic.</li>
+              </>
+            )}
           </ol>
           {platform === "slack" && manifest && name.trim() && <ManifestText text={manifest.text} />}
         </StepCard>
@@ -264,7 +305,7 @@ export function AddBot(props: {
       return (
         <StepCard
           step={1}
-          title={{ slack: "Paste the two tokens", discord: "Paste the token, then add it to a server", telegram: "Paste the token" }[platform]}
+          title={{ slack: "Paste the two tokens", discord: "Paste the token, then add it to a server", telegram: "Paste the token", whatsapp: "Paste three values, then set the webhook" }[platform]}
           back={() => setStep(0)}
           next={
             <button className="btn primary lg" disabled={check.state !== "ok"} onClick={() => setStep(2)}>
@@ -273,14 +314,29 @@ export function AddBot(props: {
             </button>
           }
         >
-          {platform !== "discord" && (
+          {platform !== "discord" && platform !== "whatsapp" && (
             <p className="lead">
               {platform === "slack"
                 ? "Both come from your app's page on api.slack.com. They're checked as you paste."
                 : "Copy the whole token BotFather sent you. It's checked as you paste."}
             </p>
           )}
-          {platform === "slack" ? (
+          {platform === "whatsapp" ? (
+            <>
+              <p className="lead">All three come from your Meta app. They're checked as you paste.</p>
+              <Field label="Phone number ID" hint="WhatsApp → API Setup, under the test number" width={620}>
+                <TokenInput value={phoneNumberId} onChange={setPhoneNumberId} placeholder="1234567890…" check={check} autoFocus />
+              </Field>
+              <Field label="App secret" hint="App settings → Basic → App secret" width={620}>
+                <TokenInput value={appToken} onChange={setAppToken} placeholder="32 letters and digits" check={check} />
+              </Field>
+              <Field label="Access token" hint="the permanent System User token" width={620}>
+                <TokenInput value={botToken} onChange={setBotToken} placeholder="EAA…" check={check} />
+                <CheckText check={check} />
+              </Field>
+              {check.state === "ok" && check.verifyToken && <WebhookBox verifyToken={check.verifyToken} webhookUrl={check.webhookUrl ?? null} />}
+            </>
+          ) : platform === "slack" ? (
             <>
               <Field label="Bot token" hint="Install App → Bot User OAuth Token" width={620}>
                 <TokenInput value={botToken} onChange={setBotToken} placeholder="xoxb-…" check={check} autoFocus />
@@ -442,7 +498,8 @@ export function AddBot(props: {
                 {platform === "slack" && `In Slack, open ${botName} under Apps and send it a direct message.`}
                 {platform === "discord" &&
                   "In Discord, open the bot's profile in the server you added it to, choose Message and send it something."}
-                {platform === "telegram" && "Open the bot in Telegram and press Start."} The first person to do so becomes its
+                {platform === "telegram" && "Open the bot in Telegram and press Start."}
+                {platform === "whatsapp" && "Send the test number any message from your phone on WhatsApp."} The first person to do so becomes its
                 owner.
               </p>
               <span className="waiting">
@@ -452,8 +509,8 @@ export function AddBot(props: {
               <a
                 className={`btn brand ${platform}`}
                 href={
-                  platform === "telegram"
-                    ? (created?.chatLink ?? "https://web.telegram.org")
+                  platform === "telegram" || platform === "whatsapp"
+                    ? (created?.chatLink ?? (platform === "telegram" ? "https://web.telegram.org" : "https://web.whatsapp.com"))
                     : platform === "discord"
                       ? "https://discord.com/channels/@me"
                       : "slack://open"
@@ -582,4 +639,24 @@ function TokenInput(props: { value: string; onChange: (value: string) => void; p
 function CheckText({ check }: { check: Check }) {
   if (check.state === "idle") return null;
   return <span className={`check-text ${check.state}`}>{check.text}</span>;
+}
+
+/** What to enter under WhatsApp → Configuration → Webhook in the Meta app. */
+export function WebhookBox({ verifyToken, webhookUrl }: { verifyToken: string; webhookUrl: string | null }) {
+  return (
+    <div className="soft-box">
+      <h3>Point Meta's webhook at T3 Bridge</h3>
+      <p>In the Meta app, open WhatsApp → Configuration → Webhook, choose Edit and enter:</p>
+      <p>
+        Callback URL: <code>{webhookUrl ?? "https://<your public address>/whatsapp/webhook"}</code>
+        <br />
+        Verify token: <code>{verifyToken}</code>
+      </p>
+      <p className="small">
+        Then choose Verify and save, and under Webhook fields subscribe to <code>messages</code>.
+        {webhookUrl === null &&
+          " The bridge listens on 127.0.0.1:47822; expose only that port over HTTPS (e.g. Tailscale Funnel) and set T3_BRIDGE_WHATSAPP_PUBLIC_URL."}
+      </p>
+    </div>
+  );
 }
